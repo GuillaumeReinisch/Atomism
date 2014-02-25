@@ -40,8 +40,9 @@
 #define LOGGER_HEADER2COLUMNS(p,a,au,b,bu)  		Logger::header2Columns(p,a,au,b,bu);
 #define LOGGER_WRITE2COLUMNS(p,a,b)  			Logger::write2Columns(p,a,b);
 
-#define ATOMISM_LOGIN()         Logger::enterFunction( __PRETTY_FUNCTION__ );
+#define ATOMISM_LOGIN()          Logger::enterFunction( __PRETTY_FUNCTION__ );
 #define ATOMISM_LOGOUT()         Logger::exitFunction(__PRETTY_FUNCTION__);
+#define ATOMISM_RETURN(r)        Logger::exitFunction(__PRETTY_FUNCTION__);  return r;
 
 using namespace std;
 
