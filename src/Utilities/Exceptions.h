@@ -27,9 +27,11 @@
 
 #define ATOMISM_THROW(MESSAGE)     		throwAny( MESSAGE, __PRETTY_FUNCTION__ )
 #define ATOMISM_THROW_EXCEPTION(e) 		throwAny(e)
-#define ATOMISM_THROW_NOT_IMPLEMENTED()	throwNotImplemented( __PRETTY_FUNCTION__ )
+#define ATOMISM_THROW_NOT_IMPLEMENTED()		throwNotImplemented( __PRETTY_FUNCTION__ )
 #define ATOMISM_THROW_VIRTUAL() 		throwVirtual( __PRETTY_FUNCTION__ )
-#define ATOMISM_EXCEPT_IF(FUNC,MESSAGE)	exceptIf( FUNC, MESSAGE, __PRETTY_FUNCTION__ )
+#define ATOMISM_EXCEPT_IF(FUNC,MESSAGE)		exceptIf( FUNC, MESSAGE, __PRETTY_FUNCTION__ )
+#define ATOMISM_EXCEPT_IF(FUNC)			exceptIf( FUNC, "MESSAGE", __PRETTY_FUNCTION__ )
+
 #define ATOMISM_TRY(FUNC)               impact_try( FUNC, __PRETTY_FUNCTION__ )
 
 #include<Atomism/Logger.h>
