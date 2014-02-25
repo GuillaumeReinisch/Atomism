@@ -21,117 +21,91 @@
 #ifndef KINETICOPERATOR_H
 #define KINETICOPERATOR_H
 
-#include <Atomism/Entity.h>
+#include <Entity.h>
 
 namespace atomism {
+    
+    /*! \class KineticOperator
+     * \brief Describes the kinetic operator used to define the equations of motion in
+     * the Lagrangian formalism.
+     *
+     */
+	template<
+    typename ScalarType         = double,
+    typename StateType          = std::vector<ScalarType>
+    >
+    class KineticOperator {
         
-        /*! \class KineticOperator
-         * \brief Describes the kinetic operator used to define the equations of motion in
-         * the Lagrangian formalism.
+    public:
+        
+	    KineticOperator(boost::shared_ptr<const Entity> entity);
+        
+        /* \brief compute the kinetic matrix
          *
-         * The kinetic operator describes how the masses in the system move with respect
-         * to the generalized coordinates. 
-        * ~~~~~~~~~~~~~
-        */
-	template<typename ScalarType=double,
-	         typename VectorType=std::vector<ScalarType>,
-		 DerivedClass 
-		 >
-        class KineticOperator 
-        {
-            
-        public:
-            
-	    KineticOperator() { }
-                        
-	    KineticOperator(boost::shared_ptr<GeneralizedCoordinates> coords,
-			    boost::shared_ptr<Entity> entity);
-            
-	    
-            /*! \brief add a dynamic degree of freedom
-             *
-             * Define the dynamic DoF 'i' of the 'entity' as dynamic and defined by the scalar function 'fct'
-	     * 
-             * \param index index of the Dof targeted in 'entity'
-             * \param fct scalar function defining the Dof value w/ generalized coordinates
-             */
-            boost::shared_ptr<msTreeMapper> addDynamicDof( size_t index ,
-                                                           boost::shared_ptr<ScalarFunction> fct);
-            
-            /*! \brief add a dynamic degree of freedom represented by a linear scalar function
-             *
-             * Define the dynamic DoF 'i' of the 'entity' as a linear scalar function
-             * of a variable of the coorindates.
-             * \param entity entity containing the target Dof
-             * \param indexDof index of the Dof targeted in 'entity'
-             * \param indexVariable index of the variable in the generalized coordinates'
-             */
-            boost::shared_ptr<msTreeMapper> addDynamicDofLinear( size_t indexDof ,
-                                                                 size_t indexVariable );
-            
-            //! set the value of the dynamic Dof in the entites w/ current value of the generalized coordinates
-            void setDynamicDofs();
-            
-            double kineticFunction();
-	    
-            KineticMatrix&   computeKMat();
-	                
-        private:
-            
-                        
-            boost::shared_ptr<GeneralizedCoordinates>   generalizedCoordinates;
-            boost::shared_ptr<Entity>                   entity;
-            
-	    // linearDynamicDofs[i]=index of var or -1
-	    VectorType linearDynamicDofs; 
-	    
+         * At the end of the function, the Environment parameter is
+         * updated for the kinetic matrix, the positions and the jacobians.
+         
+         * \param q generalized coordinates
+         * \param env environment 
+         */
+        double computeKineticMatrix(const _GeneralizedCoordinates& q,
+                                    Environment& env);
+        
+    private:
+        
+        boost::shared_ptr<const Entity>                   _Entity;
+        
+        KineticOperator();
 	    //map<int,ScalarFunction> customDynamicDofs;
-        };
-  
-	
-//-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------
+    };
+    
+    
+    //-----------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------
 	
     template< typename ScalarType=double,
-              typename VectorType=std::vector<ScalarType>
-             >
-    inline  
-    KineticMatrix KineticOperator::computeKMat() { 
-	      
+    typename VectorType=std::vector<ScalarType>
+    >
+    inline
+    KineticMatrix KineticOperator::setDynamicDofs() {
+        
         ATOMISM_LOGIN();
+        _Entity->setDofValues(_GeneralizedCoordinates->getValues());
+        ATOMISM_LOGOUT();
+        return KMatrix;
+    };
+
+    //-----------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------
 	
-        size_t n = generalizedCoordinates->size();
-	
-	VectorType dofsValue0;
-	entity.getDofValue(dofsValue0);
-		
-	VectorType dofsValue_i, dofsValue_j,
-	           atomDispl_iX,atomDispl_iY,atomDispl_iZ,
-		   atomDispl_jX,atomDispl_jY,atomDispl_jZ;
-	
-        for(size_t i=0;i<n;i++){
-	
-	   for(size_t j=0;j<n;j++){
-	
-	       // loop over Dof
-	       incrementDofValues(linearDynamicDofs,dofsValue0,i,dofsValue_i,generalizedCoordinates[i].dq,
-				  linearDynamicDofs,dofsValue0,j,dofsValue_j,generalizedCoordinates[j].dq);
-	       
-	       // loop over Atoms
-	       entity->getAtomicDisplacments(dofsValue0, dofsValue_i,atomDispl_iX,atomDispl_iY,atomDispl_iZ);
-	       entity->getAtomicDisplacments(dofsValue0, dofsValue_j,atomDispl_jX,atomDispl_jY,atomDispl_jZ);
-	       
-	       setKMatElement(KMatrix,i,j,
-			      atomDispl_iX,atomDispl_iY,atomDispl_iZ,
-			      atomDispl_jX,atomDispl_jY,atomDispl_jZ,
-			      entity->MassElements);
-	   }
-	};
-	    
-        ATOMISM_LOGOUT();  //Anything about logging can be removed by configuration
-	
-        return KMatrix;       
-   };
+	template<
+    typename ScalarType         = double,
+    typename StateType          = std::vector<ScalarType>
+    >
+    inline
+    KineticMatrix KineticOperator::computeKineticMatrix(
+                                               const _GeneralizedCoordinates& q,
+                                               Environment& env) const {
+        
+        ATOMISM_LOGIN();        
+        
+        _Entity->computeJacobian(q.getValues(),
+                                 q.getDerivationSize(),
+                                 env,
+                                 );
+        
+        setMatrixElements( env.KMatrix, [&env] (size_t i, size_t j)  {
+            
+                              return entity->getMasses() *
+                                     innerProduct( env._JacOfDispl[i],
+                                                   env._JacOfDispl[j]);
+                          });
+        
+        double KinEnergy = KMatrix * qp;
+        
+        ATOMISM_LOGOUT();
+        return KinEnergy;
+    };
     
 }
 #endif // MSKINETICOPERATOR_H
