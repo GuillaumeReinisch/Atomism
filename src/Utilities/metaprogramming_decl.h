@@ -24,16 +24,12 @@
 #include <Logger.h>
 #include <Exceptions.h>
 
-namespace Atomism
+namespace atomism
 {
   
-  // A function for zero-initializing a vectorized numeric types
-  template < typename T, int N >
-  inline
-  T zero();
 
   // A function for zero-initializing a matrix numeric types
-  template < typename T, int N , int M >
+  template < typename T, int N , int M = 1 >
   inline
   T zero();
   

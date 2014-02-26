@@ -23,7 +23,7 @@
 #include <metaprogramming_decl.h>
 
 
-namespace Atomism
+namespace atomism
 {
   
   template < typename T, int N , int M = 1 >
@@ -113,7 +113,7 @@ namespace Atomism
       
       if( x.size()==0 ) ATOMISM_RETURN( 0);
       
-      ScalarType s = init_clone(x[0]*y[0]);
+      Scalar s = init_clone(x[0]*y[0]);
       for(size_t i=1;i<x.size();i++) s+=x[i]*y[i];
       
       ATOMISM_RETURN(s);
@@ -158,8 +158,6 @@ namespace Atomism
        ATOMISM_LOGIN();
        ATOMISM_EXCEPT_IF([&](){return x.size()!=y.size();});
       
-       if (x.size==0) ATOMISM_RETURN( zero<Vector3d,3>() );
-       
        auto sum = zero<Vector3d,3>();
         
        for( size_t i = 0; i <x.size(); i++ ) {

@@ -29,12 +29,11 @@
 #define ATOMISM_THROW_EXCEPTION(e) 		throwAny(e)
 #define ATOMISM_THROW_NOT_IMPLEMENTED()		throwNotImplemented( __PRETTY_FUNCTION__ )
 #define ATOMISM_THROW_VIRTUAL() 		throwVirtual( __PRETTY_FUNCTION__ )
-#define ATOMISM_EXCEPT_IF(FUNC,MESSAGE)		exceptIf( FUNC, MESSAGE, __PRETTY_FUNCTION__ )
-#define ATOMISM_EXCEPT_IF(FUNC)			exceptIf( FUNC, "MESSAGE", __PRETTY_FUNCTION__ )
+#define ATOMISM_EXCEPT_IF(FUNC)			exceptIf( FUNC, #FUNC, __PRETTY_FUNCTION__ )
 
-#define ATOMISM_TRY(FUNC)               impact_try( FUNC, __PRETTY_FUNCTION__ )
+#define ATOMISM_TRY(FUNC)               	impact_try( FUNC, __PRETTY_FUNCTION__ )
 
-#include<Atomism/Logger.h>
+#include<Logger.h>
 
 namespace atomism
 {
@@ -46,30 +45,28 @@ namespace atomism
     public:
         
         Exception(const std::string& info, const std::string& function);
-        
-        Exception(const std::string& info);
-        
-        void addContext(const std::string& str){ Contexts.push_back(str); }
+                
+        void addContext(const std::string& str){ _Contexts.push_back(str); }
         
         char const* what() const throw();
         
         ~Exception() throw () { }
         
-        std::string getFunction() const { return Function; }
+        std::string getFunction() const { return _Function; }
         
-        std::string getInfo()     const { return Info;     }
+        std::string getInfo()     const { return _Info;     }
         
-        std::vector<std::string> getContexts() const { return Contexts; }
+        std::vector<std::string> getContexts() const { return _Contexts; }
         
     private:
         
-        std::string Info;
+        std::string _Info;
         
-        std::string Function;
+        std::string _Function;
         
-        std::vector<std::string> Contexts;
+        std::vector<std::string> _Contexts;
         
-        mutable std::string message;
+        mutable std::string _message;
     };
     
     
@@ -81,7 +78,7 @@ namespace atomism
     public:
         
         MethodNotDefined(std::string function) :
-        Exception("The method "+function+" is not defined",function,"")
+        Exception("The method not defined",function)
         {  }
     };
     
@@ -92,8 +89,8 @@ namespace atomism
         
     public:
         
-        atMethodVirtual(std::string function) :
-        Exception("The method "+function+" is virtual, overiden method need to be used.",function,"")
+        MethodVirtual(std::string function) :
+        Exception("The method is virtual",function)
         {  }
     };
     
@@ -101,8 +98,8 @@ namespace atomism
         
     public:
         
-        ExceptionInLogic(std::string message,std::string function,std::string id) :
-        Exception("exception in logic: "+message,function,id)
+        ExceptionInLogic(std::string message,std::string function) :
+        Exception("Exception in logic: "+message,function)
         {  }
     };
     
@@ -115,9 +112,9 @@ namespace atomism
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
     
-    void throwAny(std::string message,std::string function, std::string id) {
+    void throwAny(std::string message,std::string function) {
         
-        throwAny(Exception(message,function,id));
+        throwAny( Exception(message,function) );
     };
     
     //-----------------------------------------------------------------------------
@@ -125,9 +122,9 @@ namespace atomism
 	
     template<class Func>
     inline
-    void exceptIf(Func func,std::string message,std::string method,std::string id) {
+    void exceptIf(Func func,std::string message,std::string method) {
         
-        if( func() ){  ExceptionInLogic e(message,method,id);
+        if( func() ){  ExceptionInLogic e(message,method);
             throwAny(e);
         }
     };
@@ -167,73 +164,28 @@ namespace atomism
     
     
     void throwAny(Exception e) {
-        
-        msLogElement* elem = msLogger::CurrentElement;
-        while(elem->Parent != 0 ) elem = elem->Parent;
-        msLogger::exitAllFunctions();
-        
-        BOOST_THROW_EXCEPTION(e);
+        Logger::clear();
+        throw(e);
     };
     
-    Exception::Exception(std::string info, std::string function, std::string id) {
+    Exception::Exception(const std::string& info, const std::string& function) {
         
-        Info=info;Id=id;Function=function;
-        msLogElement* elem = msLogger::CurrentElement;
-        //Function=elem->getFunctionName();
-        while(elem->Parent != 0 ) {
+        _Info=info;
+	_Function=function;
+        Logger::LogElement* elem = Logger::_CurrentElement;
+	
+        while(elem->_Parent != 0 ) {
             addContext(elem->getFunctionName());
-            elem = elem->Parent;
+            elem = elem->_Parent;
         };
-        
-    }
-    
-    Exception::Exception(string info,string id){
-        
-        Info=info;Id=id;
-        msLogElement* elem = msLogger::CurrentElement;
-        Function=elem->getFunctionName();
-        cout<<"Function:"<<Function<<endl;
-        while(elem->Parent != 0 ) {
-            addContext(elem->getFunctionName());
-            elem = elem->Parent;
-        }
-    }
-    
-    PyObject *myCPPExceptionType = NULL;
-    
-    void translateExceptionPython(Exception const& e) {
-        
-        assert(myCPPExceptionType != NULL);
-        boost::python::object pythonExceptionInstance(e);
-        PyErr_SetObject(myCPPExceptionType, pythonExceptionInstance.ptr());
-    }
-    
-    
-    void Exception::registryInPython()  {
-        
-#if USE_PYTHON > 0
-        using namespace boost::python;
-        
-        class_<Exception, boost::shared_ptr<Exception> >
-        pyException("Exception", "base class for exception in impact", no_init );
-        
-        pyException.def("getId", &Exception::getId)
-        .def("getFunction", &Exception::getFunction)
-        .def("getInfo", &Exception::getInfo)
-        .def("getContexts", &Exception::getContexts);
-        
-        myCPPExceptionType = pyException.ptr();
-        boost::python::register_exception_translator<Exception>
-        (&translateExceptionPython);
-        
-#endif
     }
     
     char const*  Exception::what() const throw() {
         
-        message = "\nThrow in function "+Function+".\nThrow by the object "+Id+":\n\t "+output::printRed(Info)+".\n Contexts:\n";
-        for(size_t i=0; i<Contexts.size();i++)  message+="-"+Contexts[i]+";\n";
-        return  message.c_str();
+        _message = _Function+" : "+_Info+".\n Contexts:\n";
+        for(size_t i=0; i<_Contexts.size();i++)  
+	    _message+="-"+_Contexts[i]+";\n";
+        return  _message.c_str();
     }
 }
 #endif

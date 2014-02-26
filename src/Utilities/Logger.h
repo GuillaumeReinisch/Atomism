@@ -23,6 +23,9 @@
 #include <iomanip>
 #include <sstream>
 #include <ctime>
+#include <vector>
+#include <memory>
+
 //#include "boost/date_time/posix_time/posix_time.hpp"
 
 #ifndef LOGGER_H
@@ -42,13 +45,15 @@
 
 #define ATOMISM_LOGIN()          Logger::enterFunction( __PRETTY_FUNCTION__ );
 #define ATOMISM_LOGOUT()         Logger::exitFunction(__PRETTY_FUNCTION__);
-#define ATOMISM_RETURN(r)        Logger::exitFunction(__PRETTY_FUNCTION__);  return r;
+#define ATOMISM_RETURN(r)        Logger::exitFunction(__PRETTY_FUNCTION__); return r;
 
 using namespace std;
 
-namespace impact
+namespace atomism
 {
     
+   class Exception;
+  
     /** Logger to displat messages in outsream
      * 
      * The logger defines the loggin mechanisms in atomism. The mechanisms
@@ -69,133 +74,78 @@ namespace impact
      * at the end. In this case, performance checks in terms of the time spent in each method 
      * are available.
      */   
-    template<typename ScalarType=double>
-    class Logger : boost::noncopyable {
+    class Logger {
       
       friend class Exception;
       friend void throwAny(Exception);
       
+      public:
+	    
+      enum Priority { DEBUG, INFO, WARNING, ERROR };
           
+      
         class LogElement {
 	  
             friend class Exception;
 	    friend class Logger;
 	    friend void throwAny(Exception);
 		
-            struct LogMessage{ std::string MessagePriority; 
-	                       std::string Message; };
-	      
+	    typedef std::vector< std::shared_ptr<LogElement> > VectorElem;
+	    typedef std::vector<std::pair<Priority,string> >   VectorMessages;
+	    
         public:
          
-            LogElement();
+            LogElement(const std::string& function,LogElement* parent) : 
+            _Name(function), _Parent(parent) {
+	      
+	        _TimeBegin = clock();
+	    };
         
-            LogElement* addFunctionCall(std::string fctpriority, 
-				    std::string function);
+            LogElement* addFunctionCall(const std::string& function) { 
+	      
+                  _Children.push_back(std::shared_ptr<LogElement>( new Logger::LogElement(function,this) ));
+		  return _Children.back().get();
+	    };
         
-	    void addMessage( std::string messagepriority , 
-	  		     std::string message );
+	    void addMessage( Priority priority , 
+	  		     std::string message ) {
+	        _Messages.push_back( pair<Priority,std::string>(priority,message) );	       
+	    };
 		
-            std::vector< boost::shared_ptr<LogElement> > getFunctionsCalled();
-        
-            LogElement* getParent();
-        
-        
-            std::string getFunctionName();
+            VectorElem 	   getFunctionsCalled() const { return _Children;}
+            LogElement*    getParent()       	const { return _Parent;  }
+            std::string    getFunctionName()	const { return _Name;    }
+            VectorMessages getMessages()        const { return _Messages;}
 	
-            std::vector<std::string> getMessages();
-	
-            std::string getPriority();
-	
-            std::string getTime();
-	
-            std::string getTimeElapsed();
+            double duration() { return _TimeEnd - _TimeBegin; };
         
-            void closeFunction(std::string);
+            LogElement* closeFunction(std::string) { _TimeEnd = clock(); }
         
         private:
-       
-            double TimeBegin;
-	
-            double TimeEnd;
-        
-            std::vector<boost::shared_ptr<LogElement> > Children;
-        
-            std::string FunctionPriority;
-        
-            std::string FunctionCalled;
-        
-            std::vector<std::string> Messages;
-        
-            std::string TimeStamp;
-        
-            LogElement* Parent;
-        };
-    
-    public:
-      
-        // log priorities
-        enum Priority {
-	  
-	    TRACK,
-            DEBUG,
-            INFO,
-            WARNING,
-            ERROR
+           
+            std::string _Name;
+            LogElement* _Parent;
+            std::vector<std::shared_ptr<LogElement> > _Children;
+            std::vector<std::pair<Priority,string> >  _Messages;
+	    
+            double _TimeBegin;
+            double _TimeEnd;
         };
         
     public:
-        
         
         // start/stop logging
         // - messages with priority >= minPriority will be written in log
         
         static void start(Priority minPriority, int llm);
-        static void restart();
-        static void stop();
-        
-        static void enterFunction(const std::string& fct,
-				  const std::string& objId);
-	 
-	static void exitFunction( const std::string& fct);
-	       
-	static void write(Priority priority, 
-			  const string& message,
-		          const string& fct);
+        static void clear();
 	
-        static void write(Priority priority,
-			  stringstream& message,
-			  const string& fct);
+        static void enterFunction(const std::string& fct);
+	static void exitFunction(const std::string& fct);
+	static void write(Priority priority, const string& message);
 	
-        
-	static void header2Columns(Priority priority, 
-				   std::string c0, 
-                                   std::string c1);
-	
-        static void write2Columns( Priority priority,
-				   ScalarType a, 
-				   ScalarType b);
-	
-        static void header3Columns(Priority priority,
-				   std::string c0, 
-                                   std::string c1,
-                                   std::string c2);
-	
-        static void write3Columns(Priority priority, 
-				  ScalarType a, 
-				  ScalarType b, 
-				  ScalarType c );
-        
-        static void header4Columns(Priority priority, 
-				   std::string c0, 
-                                   std::string c1, 
-                                   std::string c2, 
-                                   std::string c3 );
-	
-        static void write4Columns(Priority priority, 
-				  ScalarType a, 
-				  ScalarType b,
-				  ScalarType c, 
-				  ScalarType d );
+        template<int N, typename T>
+        static void writeMultiColumns(std::array<T,N>& heads);
         	
     private:
         
@@ -208,16 +158,19 @@ namespace impact
 	
         Logger(const Logger& logger) {}
         
+        static bool        _Active;
+        static bool        _FunctionCalls2Tree;
 
-        static bool        active;
-	
-        ofstream           OutStream;
-	
-        static Priority    minPriority;
+        static size_t      _CurrentDepth;
+	static size_t      _MaxFunctionCallDepth;
         
-        static bool        MethodCallsTracked;
+	static ostream*    _OutStream;
+	
+        static Priority    _MinPriority;
         
-        static LogElement* CurrentElement;
+        
+        
+        static LogElement* _CurrentElement;
         
         // names describing the items in enum Priority
         static const string PRIORITY_NAMES[];
@@ -231,15 +184,19 @@ namespace impact
     // static members initialization
     // --------------------------------------
        
-    int Logger::InfoLevel = 0;
+    bool Logger::_FunctionCalls2Tree = 0;
     
-    int Logger::InfoLevelMax = 3;
+    bool Logger::_Active = 0;   
     
-    bool Logger::active =0;
+    size_t Logger::_CurrentDepth = 0;
     
-    Logger::Priority Logger::minPriority = Logger::DEBUG;
+    size_t Logger::_MaxFunctionCallDepth = 3;
+            
+    Logger::Priority Logger::_MinPriority = Logger::DEBUG;
     
-    const string Logger::PRIORITY_NAMES[] =
+    Logger::LogElement* Logger::_CurrentElement = 0;
+    
+    const std::string Logger::PRIORITY_NAMES[] =
     {   "TRACK",
         "DEBUG",
         "INFO",
@@ -251,344 +208,101 @@ namespace impact
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
     
-    template<typename ScalarType>
     inline
     Logger::Logger() {}
         
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
     
-    template<typename ScalarType>
     inline
     void Logger::start(Priority min, int llm) {
       
-        CurrentElement = new LogElement();
-        InfoLevel = 0;
-        InfoLevelMax = llm ;
-        active = true;
-        min = minPriority;
+        _CurrentElement = new LogElement("Logger",0);
+        _CurrentDepth = 0;
+        _MaxFunctionCallDepth = llm ;
+        _Active = true;
+        _MinPriority = min;
+	_OutStream = &(std::cout);
     }
     
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
     
-    template<typename ScalarType>
     inline        
-    void Logger::stop()
+    void Logger::clear()
     {
-        active = false;
-        delete CurrentElement;
+        if( _CurrentElement !=0 )
+            delete _CurrentElement;
+	_CurrentDepth = 0;
     }
     
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
 
-    template<typename ScalarType>
     inline        
-    void Logger::enterFunction(std::string fct,std::string objId) {
+    void Logger::enterFunction( const std::string& fct ) {
         
-        if  (!active)  return;
-        NoOfFunctionOpen++;
-        if ( minPriority > DEBUG)  return;
-	if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
+        if  (!_Active)  return;
+	if( _FunctionCalls2Tree )
+            _CurrentElement = _CurrentElement->addFunctionCall(fct);
 	
-        for(int i=0;i<NoOfFunctionOpen-1;i++) std::cout<<"\t";
-        
-        std::cout<<output::printGreen(objId)
-        <<" "<<fct
-        <<std::endl;
-        
-        if(areMethodCallsTracked())
-            CurrentElement = CurrentElement->addFunctionCall( PRIORITY_NAMES[INFO], fct );
-        
+        _CurrentDepth++;
+	
+        if ( _MinPriority > DEBUG)  return;
+	if ( _CurrentDepth++ > _MaxFunctionCallDepth ) return;
+	
+        for(int i=0;i<_CurrentDepth-1;i++) std::cout<<"\t";
+        (*_OutStream)<<fct<<std::endl;
     }
     
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
     
-    template<typename ScalarType>
-    inline    
-    void Logger::enterFunctionDbg( std::string fct, std::string objId) {
-        
-        if  (!active)  return;
-	if (NoOfFunctionOpen<0) NoOfFunctionOpen=1;
-        NoOfFunctionOpen++;
-        if ( minPriority > DEBUG)  return;
-               
-        for(int i=0;i<NoOfFunctionOpen;i++) std::cout<<"\t";
-        
-        std::cout<<output::printYellow(objId)
-        <<" "<<fct<<". Function open N°"<<NoOfFunctionOpen<<endl;
-	
-        if(areMethodCallsTracked())
-            CurrentElement = CurrentElement->addFunctionCall( PRIORITY_NAMES[DEBUG], fct );
-    }
-    
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-    
-    template<typename ScalarType>
     inline        
-    void Logger::exitFunction() {
+    void Logger::exitFunction( const std::string& fct ) {
       
-        if  (!active)  return;
-        NoOfFunctionOpen--;
-        if ( minPriority > DEBUG)  return;
-        
-        if(areMethodCallsTracked()){
-            
-            CurrentElement->closeFunction("");
-            if( CurrentElement->getParent() != 0 )
-               CurrentElement = CurrentElement->getParent();
-        }
-    }
-   
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-
-    template<typename ScalarType>
-    inline    
-    void Logger::exitFunction(std::string fct) {
-        
-        if  (!active)  return;
-        NoOfFunctionOpen--;
-        if ( minPriority > DEBUG)  return;
+        if  (!_Active)  return;
 	
+	if( _FunctionCalls2Tree )
+	    _CurrentElement = _CurrentElement->closeFunction(fct);
+	
+        _CurrentDepth--;
         LOGGER_WRITE(Logger::DEBUG,"exit function");
-                
-        if(areMethodCallsTracked()) {
-            try {
-                CurrentElement->closeFunction(fct);
-            }
-            catch (msException& e) {
-	        stringstream out;
-		out<<"void Logger::exitFunction(std::string fct), method still open "<<endl;
-		while ( CurrentElement->getParent() != 0 ) {
-	  
-	            out<<"Function called:"<<CurrentElement->getFunctionName()<<" "<<endl;
-	            CurrentElement = CurrentElement->getParent();
-		}
-                e.addContext(out.str());
-	        IMPACT_THROW_EXCEPTION(e);	    
-	    }
-            if( CurrentElement->getParent() != 0 )
-                CurrentElement = CurrentElement->getParent();
-        }
     }
     
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
-
-    template<typename ScalarType>
+    
     inline        
-    void Logger::exitAllFunctions() {
+    void Logger::write(Priority priority, const string& message ) {
         
-        if  (!active)  return;
-	if (CurrentElement==0) return;
-	cout<<"an exception occured, exit all function"<<endl;
-	LogElement* elem = Logger::CurrentElement;
-        while(elem->Parent != 0 ) {
-	    cout<<"exit Function:"<<elem->getFunctionName()<<endl;
-	    elem->closeFunction(elem->getFunctionName());
-            NoOfFunctionOpen--;
-	    elem = elem->Parent;
-	}
-	NoOfFunctionOpen=0; 
-	CurrentElement = elem;
-	cout<<"done exiting all functions"<<endl;
-    }
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-    
-    template<typename ScalarType>
-    inline        
-    void Logger::write(Priority priority, const string& message , const string& fct) {
+        if( !_Active ) return;
+	if( _FunctionCalls2Tree ) _CurrentElement->addMessage(priority,message);
+	if(priority<_MinPriority) return;
+	
+        if( (priority==INFO) && 
+	    (_CurrentDepth > _MaxFunctionCallDepth )) return;
         
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        if(priority==ERROR){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<output::printRed(message)<<std::endl;
-            char a[10];std::cin>>a;return;
-        }
-        if(priority==WARNING){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<output::printYellow(message)<<std::endl;
-        }
-        if(priority==INFO){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<output::printGreen(message)<<std::endl;
-        }
-        if(priority==DEBUG){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<message<<std::endl;
-        }
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], message );
-    }
-   
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-
-    template<typename ScalarType>
-    inline    
-    void Logger::write( Priority priority , const string& message )
-    {
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        for(int i=0;i<NoOfFunctionOpen;i++) std::cout<<"\t";
-        
-        if(priority==ERROR){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<output::printRed(message)<<std::endl;
-            char a[10];std::cin>>a;
-        }
-        if(priority==WARNING){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<output::printYellow(message)<<std::endl;
-        }
-        if(priority==INFO){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<output::printGreen(message)<<std::endl;
-        }
-        if(priority==DEBUG){
-            
-            std::cout<<PRIORITY_NAMES[priority]<<" : "
-            <<message<<std::endl;
-        }
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], message );
+	(*_OutStream)<<PRIORITY_NAMES[priority]<<" : "<<message<<std::endl;
     }
     
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
 
-    template<typename ScalarType>
+    template<int N,typename T>
     inline    
-    void Logger::header2Columns(Priority priority,string c0, string c1)
-    {
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        int witdh=25;
-        std::string v0=c0+"["+u0+"]";
-        std::string v1=c1+"["+u1+"]";
-        std::stringstream comment;
-        comment<<std::setw(witdh)<<v0<<std::setw(witdh)<<v1;
-        std::cout<<comment.str()<<std::endl;
-        
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], comment.str() );
-    }
-    
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-    
-    template<typename ScalarType>
-    inline    
-    void Logger::write2Columns(Priority priority,double a, double b)
-    {
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        int witdh=25;
-        std::stringstream comment;
-        comment<<std::setw(witdh)<<a<<std::setw(witdh)<<b<<std::endl;
-        std::cout<<comment.str();
-        
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], comment.str() );
-    }
-    
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-    
-    template<typename ScalarType>
-    inline    
-    void Logger::header3Columns(Priority priority,string c0, string c1, string c2) {
-        
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        int witdh=25;
-        std::string v0=c0+"["+u0+"]";
-        std::string v1=c1+"["+u1+"]";
-        std::string v2=c2+"["+u2+"]";
-        std::stringstream comment;
-        comment<<std::setw(witdh)<<v0<<std::setw(witdh)<<v1<<std::setw(witdh)<<v2;
-        std::cout<<comment.str()<<std::endl;
-        
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], comment.str() );
-    }
-    
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-    
-    template<typename ScalarType>
-    inline    
-    void Logger::write3Columns(Priority priority,double a, double b, double c) {
-        
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        int witdh=25;
-        std::stringstream comment;
-        comment<<std::setw(witdh)<<a<<std::setw(witdh)<<b<<std::setw(witdh)<<c;
-        std::cout<<comment.str()<<std::endl;
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], comment.str() );
-    }
-    
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-    
-    template<typename ScalarType>
-    inline    
-    void Logger::header4Columns(Priority priority,string c0, string c1, string c2, string c3) {
-        
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        int witdh=25;
-        std::string v0=c0+"["+u0+"]";
-        std::string v1=c1+"["+u1+"]";
-        std::string v2=c2+"["+u2+"]";
-        std::string v3=c3+"["+u3+"]";
-        std::stringstream comment;
-        comment<<std::setw(witdh)<<v0<<std::setw(witdh)<<v1<<std::setw(witdh)<<v2<<std::setw(witdh)<<v3;
-	std::cout<<comment.str()<<std::endl;
+    void Logger::writeMultiColumns(std::array<T,N>& heads) {
+      
+        if( !_Active ) return;
 	
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], comment.str() );
-    }
-    
-    //-------------------------------------------------------------------------------
-    //-------------------------------------------------------------------------------
-    
-    template<typename ScalarType>
-    inline    
-    void Logger::write4Columns( Priority priority, double a, double b, double c, double d) {
-        
-        if( (!active) || (priority<minPriority) ) return;
-        if( (minPriority == INFO ) && (NoOfFunctionOpen > InfoLevelMax ) ) return;
-        
-        int witdh=25;
-        std::stringstream comment;
-        comment<<std::setw(witdh)<<a<<std::setw(witdh)<<b<<std::setw(witdh)<<c<<std::setw(witdh)<<d;
-	std::cout<<comment.str()<<std::endl;
+	int witdh=25;
+	stringstream out;
+	for(size_t i=0; i<N;i++)  out<<std::setw(witdh)<<heads[i];
 	
-        if(areMethodCallsTracked())
-            CurrentElement->addMessage(PRIORITY_NAMES[priority], comment.str() );
+	if( _FunctionCalls2Tree ) _CurrentElement->addMessage(INFO,out.str());
+	
+	if( INFO>=_MinPriority) (*_OutStream)<<out<<endl;
+	
     }
     
     
