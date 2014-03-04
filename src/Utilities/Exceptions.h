@@ -22,7 +22,7 @@
 #define MSEXCPETION_H
 
 
-#include <boost/exception/all.hpp>
+#include <assert.h>  
 
 
 #define ATOMISM_THROW(MESSAGE)     		throwAny( MESSAGE, __PRETTY_FUNCTION__ )
@@ -30,16 +30,21 @@
 #define ATOMISM_THROW_NOT_IMPLEMENTED()		throwNotImplemented( __PRETTY_FUNCTION__ )
 #define ATOMISM_THROW_VIRTUAL() 		throwVirtual( __PRETTY_FUNCTION__ )
 #define ATOMISM_EXCEPT_IF(FUNC)			exceptIf( FUNC, #FUNC, __PRETTY_FUNCTION__ )
+#define ATOMISM_VALUE_MISMATCH(FUNC1,FUNC2)	exceptValueMismatch( FUNC1, FUNC2,string(#FUNC1)+"!="+string(#FUNC2), __PRETTY_FUNCTION__ )
 
 #define ATOMISM_TRY(FUNC)               	impact_try( FUNC, __PRETTY_FUNCTION__ )
 
 #include<Logger.h>
 
+#include <exception>
+#include <string>
+#include <vector>
+
 namespace atomism
 {
     
     
-    class Exception: public boost::exception, public std::exception  {
+    class Exception: public std::exception  {
         
         
     public:
@@ -127,8 +132,21 @@ namespace atomism
         if( func() ){  ExceptionInLogic e(message,method);
             throwAny(e);
         }
-    };
-    
+    };    
+        
+        template<class Func1,class Func2>
+    inline
+    void exceptValueMismatch(Func1 func1,Func2 func2,std::string message,std::string method) {
+        
+        if( func1()!=func2() ){ 
+	   
+	    stringstream out;
+	    out<<func1()<<"!="<<func2()<<endl;
+	    ExceptionInLogic e(message+"\n"+out.str(),method);
+            throwAny(e);
+        }
+    };    
+        
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
     
@@ -164,9 +182,11 @@ namespace atomism
     
     
     void throwAny(Exception e) {
-        Logger::clear();
         throw(e);
     };
+    
+    //-----------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------
     
     Exception::Exception(const std::string& info, const std::string& function) {
         
@@ -182,7 +202,7 @@ namespace atomism
     
     char const*  Exception::what() const throw() {
         
-        _message = _Function+" : "+_Info+".\n Contexts:\n";
+        _message = _Function+" : \n"+_Info+".\n Contexts:\n";
         for(size_t i=0; i<_Contexts.size();i++)  
 	    _message+="-"+_Contexts[i]+";\n";
         return  _message.c_str();
