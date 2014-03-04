@@ -22,65 +22,97 @@
 #define GeneralizedCoordinates_H
 
 #include <Entity.h>
+#include <Environment.h>
 
 namespace atomism {
     
     /*! \class GeneralizedCoordinates
      * \brief Container fo generalized coordinates
      */
-	template<
-    typename ScalarType=double,
-    typename StateType=std::vector<ScalarType>
+    template<
+    typename Scalar=double,
+    typename Vector=std::vector<Scalar>
     >
     class GeneralizedCoordinates
     {
         
     public:
         
-	    GeneralizedCoordinates(const StateType& Values,
-                               const StateType& mins, const StateType& maxs,
-                               const StateType dqs,   const StateType& Dqs);
-        
-        GeneralizedCoordinates(const GeneralizedCoordinates& coors);
-        
-        GeneralizedCoordinates(GeneralizedCoordinates&& coors);
-        
+	GeneralizedCoordinates(const size_t n,     const Scalar& Values,
+                               const Scalar& mins, const Scalar& maxs,
+                               const Scalar dqs,   const Scalar& Dqs,
+			       std::shared_ptr<ResourceManager<Scalar,Vector>> resourcemngr
+			      );
+ /*
+	GeneralizedCoordinates(const Vector& Values, const Vector& mins, 
+			       const Vector& maxs,   const Vector& dqs,  
+			       const Vector& Dqs,
+			       std::shared_ptr<ResourceManager<Scalar,Vector>> resourcemngr
+			      );*/
+	
+	const Vector& getValues() const  {return _Values;};
+	
+	const Vector& getdqs()    const  {return _dqs;   };
+	
+	const Vector& getDqs()    const  {return _Dqs;   };
+	
+	const Vector& getMins()   const  {return _Mins;  };
+	
+	const Vector& getMaxs()   const  {return _Maxs;  };	
+	
     private:
         
-        StateType _Values;
-        StateType _dqs;
-        StateType _Dqs;
-        StateType _Mins;
-        StateType _Maxs;
+        Vector _Values;
+        Vector _dqs;
+        Vector _Dqs;
+        Vector _Mins;
+        Vector _Maxs;
         
     };
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
 	
-    template< typename ScalarType=double,
-    typename VectorType=std::vector<ScalarType>
-    >
+    template<typename Scalar,typename Vector>
     inline
-    void GeneralizedCoordinates::addVariable(ScalarType values,ScalarType mins, ScalarType maxs,
-                                             ScalarType dqs, ScalarType Dqs) {
+    GeneralizedCoordinates<Scalar,Vector>::GeneralizedCoordinates(
+                               const size_t n, const Scalar& values,
+                               const Scalar& mins, const Scalar& maxs,
+                               const Scalar dqs,   const Scalar& Dqs,
+			       std::shared_ptr<ResourceManager<Scalar,Vector>> resourcemngr
+ 								) {
         
-        ATOMISM_LOGIN();
-        
-        ATOMISM_EXCEPT_IF( [&](){ return ((Value.size()<mins.size()) or
-                                          (Value.size()<maxs.size()) or
-                                          (Value.size()<dqs.size())  or
-                                          (Value.size()<Dqs.size())); },
-                          "size of arguments not consistent" );
-        _Values = values;
-        _Dqs =    Dqs;
-        _dqs =    dqs;
-        _Min =    mins;
-        _Maxs =   maxs;
-        
-        ATOMISM_LOGOUT();
-        return KMatrix;
+        ATOMISM_LOG();
+	
+	auto v=resourcemngr->requestVector(n);
+	_Values=constant_clone(*v,values);
+	_Dqs   =constant_clone(*v,Dqs);
+	_dqs   =constant_clone(*v,dqs);
+	_Mins  =constant_clone(*v,mins);
+	_Maxs  =constant_clone(*v,maxs);
+	
     };
     
+    //-----------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------
+	/*
+    template<typename Scalar,typename Vector>
+    inline
+    GeneralizedCoordinates<Scalar,Vector>::GeneralizedCoordinates(const Vector& values,
+                               const Vector& mins, const Vector& maxs,
+                               const Vector& dqs,   const Vector& Dqs) {
+        
+        ATOMISM_LOG();
+	ATOMISM_EXCEPT_IF( [&](){return ((values.size()!=mins.size()) ||
+	                                 (values.size()!=maxs.size()) ||
+					 (values.size()!=dqs.size())  ||
+					 (values.size()!=Dqs.size()) );} );
+	
+	clone(_Values,values);
+	clone(_Dqs,   Dqs   );
+	clone(_dqs,   dqs   );
+	clone(_Mins,  mins  );
+	clone(_Maxs,  maxs  );
+    }; */
 }
 #endif // MSGeneralizedCoordinates_H
