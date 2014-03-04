@@ -25,27 +25,17 @@
 #include <ctime>
 #include <vector>
 #include <memory>
-
 //#include "boost/date_time/posix_time/posix_time.hpp"
 
 #ifndef LOGGER_H
 #define LOGGER_H
 
-
 #define LOGGER_START(MIN_PRIORITY, FILE)		Logger::start(MIN_PRIORITY, FILE);
 #define LOGGER_STOP() 					Logger::Stop();
 #define LOGGER_WRITE(PRIORITY,MESSAGE) 			Logger::write(PRIORITY,MESSAGE);
+#define LOGGER_WRITECOLUMNS(p)  			Logger::writeMultiColumns(p);
 
-#define LOGGER_HEADER4COLUMNS(p,a,au,b,bu,c,cu,d,du)  	Logger::header4Columns(p,a,au,b,bu,c,cu,d,du);
-#define LOGGER_WRITE4COLUMNS(p,a,b,c,d)  		Logger::write4Columns(p,a,b,c,d);
-#define LOGGER_HEADER3COLUMNS(p,a,au,b,bu,c,cu)  	Logger::header3Columns(p,a,au,b,bu,c,cu);
-#define LOGGER_WRITE3COLUMNS(p,a,b,c)  			Logger::write3Columns(p,a,b,c);
-#define LOGGER_HEADER2COLUMNS(p,a,au,b,bu)  		Logger::header2Columns(p,a,au,b,bu);
-#define LOGGER_WRITE2COLUMNS(p,a,b)  			Logger::write2Columns(p,a,b);
-
-#define ATOMISM_LOGIN()          Logger::enterFunction( __PRETTY_FUNCTION__ );
-#define ATOMISM_LOGOUT()         Logger::exitFunction(__PRETTY_FUNCTION__);
-#define ATOMISM_RETURN(r)        Logger::exitFunction(__PRETTY_FUNCTION__); return r;
+#define ATOMISM_LOG()            			ScopLog scoplog(__PRETTY_FUNCTION__);
 
 using namespace std;
 
@@ -53,7 +43,8 @@ namespace atomism
 {
     
    class Exception;
-  
+   class Logger;
+
     /** Logger to displat messages in outsream
      * 
      * The logger defines the loggin mechanisms in atomism. The mechanisms
@@ -114,12 +105,31 @@ namespace atomism
 		
             VectorElem 	   getFunctionsCalled() const { return _Children;}
             LogElement*    getParent()       	const { return _Parent;  }
-            std::string    getFunctionName()	const { return _Name;    }
+            
+            std::string    getFunctionName()	const { 
+	      
+	        string tmp0=_Name.substr(0,_Name.find("["));
+	        if(tmp0.find("<")==-1) return tmp0;
+	        string classname = tmp0.substr(0,tmp0.find("<"));
+	        string method =    tmp0.substr(tmp0.find(">")+1);
+	        if ( size_t(method.find(")")-method.find("(")) > 5 )
+		   return classname+method.substr(0,method.find("("))+"(...)";
+	      
+	        return classname + method.substr(0,method.find("("));   	      
+	    }
+	    
             VectorMessages getMessages()        const { return _Messages;}
 	
-            double duration() { return _TimeEnd - _TimeBegin; };
+            double duration() const { return double(_TimeEnd - _TimeBegin)*1000 / CLOCKS_PER_SEC; };
         
-            LogElement* closeFunction(std::string) { _TimeEnd = clock(); }
+	    double totalTime() const {
+	      
+	      if (_TotalTime==0) _TotalTime = CLOCKS_PER_SEC/1000;
+	      return _TotalTime * 1000/ CLOCKS_PER_SEC; }
+	    
+            LogElement* closeFunction(std::string) { _TimeEnd = clock();
+					             _TotalTime += double(_TimeEnd - _TimeBegin);
+						      return _Parent; }
         
         private:
            
@@ -127,9 +137,11 @@ namespace atomism
             LogElement* _Parent;
             std::vector<std::shared_ptr<LogElement> > _Children;
             std::vector<std::pair<Priority,string> >  _Messages;
+	     
+            clock_t _TimeBegin;
+            clock_t _TimeEnd;
 	    
-            double _TimeBegin;
-            double _TimeEnd;
+	    static double _TotalTime;
         };
         
     public:
@@ -138,15 +150,20 @@ namespace atomism
         // - messages with priority >= minPriority will be written in log
         
         static void start(Priority minPriority, int llm);
+	static void record();
         static void clear();
 	
         static void enterFunction(const std::string& fct);
 	static void exitFunction(const std::string& fct);
 	static void write(Priority priority, const string& message);
+      
+	static void toHtml(string filename);
 	
-        template<int N, typename T>
+        template<typename T,size_t N>
         static void writeMultiColumns(std::array<T,N>& heads);
         	
+	static const LogElement* getTreeElement() {return _CurrentElement;}
+	
     private:
         
         // Logger adheres to the singleton design pattern, hence the private
@@ -158,6 +175,8 @@ namespace atomism
 	
         Logger(const Logger& logger) {}
         
+        static void insertChildrenInHtml(LogElement* element,std::ostream& outfile,int& ivar);
+	    
         static bool        _Active;
         static bool        _FunctionCalls2Tree;
 
@@ -167,8 +186,6 @@ namespace atomism
 	static ostream*    _OutStream;
 	
         static Priority    _MinPriority;
-        
-        
         
         static LogElement* _CurrentElement;
         
@@ -180,10 +197,25 @@ namespace atomism
 	static void exitAllFunctions();
     };
     
+      
+   class ScopLog {
+	
+    public:
+          ScopLog(const string& method): _Method(method){  
+	             Logger::enterFunction( _Method );
+	  };
+	  ~ScopLog(){Logger::exitFunction( _Method );}
+	  
+    private:
+          string _Method;
+    };
+    
     // --------------------------------------
     // static members initialization
     // --------------------------------------
        
+    double Logger::LogElement::_TotalTime =0;
+    
     bool Logger::_FunctionCalls2Tree = 0;
     
     bool Logger::_Active = 0;   
@@ -197,12 +229,13 @@ namespace atomism
     Logger::LogElement* Logger::_CurrentElement = 0;
     
     const std::string Logger::PRIORITY_NAMES[] =
-    {   "TRACK",
-        "DEBUG",
+    {   "DEBUG",
         "INFO",
-        "WARNING"
+        "WARNING",
+	"ERROR"
     };
     
+    ostream*    Logger::_OutStream = 0;
     
     //Logger Logger::instance;
     //-------------------------------------------------------------------------------
@@ -221,9 +254,15 @@ namespace atomism
         _CurrentDepth = 0;
         _MaxFunctionCallDepth = llm ;
         _Active = true;
-        _MinPriority = min;
+         _MinPriority = min;
 	_OutStream = &(std::cout);
     }
+         
+    //-------------------------------------------------------------------------------
+    //-------------------------------------------------------------------------------
+    
+    inline
+    void Logger::record() { _FunctionCalls2Tree=1;}
     
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
@@ -246,13 +285,8 @@ namespace atomism
 	if( _FunctionCalls2Tree )
             _CurrentElement = _CurrentElement->addFunctionCall(fct);
 	
-        _CurrentDepth++;
-	
-        if ( _MinPriority > DEBUG)  return;
-	if ( _CurrentDepth++ > _MaxFunctionCallDepth ) return;
-	
-        for(int i=0;i<_CurrentDepth-1;i++) std::cout<<"\t";
-        (*_OutStream)<<fct<<std::endl;
+	_CurrentDepth++;
+	LOGGER_WRITE(Logger::DEBUG,"enter function: "+fct);
     }
     
     //-------------------------------------------------------------------------------
@@ -265,9 +299,16 @@ namespace atomism
 	
 	if( _FunctionCalls2Tree )
 	    _CurrentElement = _CurrentElement->closeFunction(fct);
-	
-        _CurrentDepth--;
+         
+	stringstream out;
         LOGGER_WRITE(Logger::DEBUG,"exit function");
+	if(_CurrentDepth>0) _CurrentDepth--;
+	
+	if( _CurrentDepth ==0 ){
+	    if( _FunctionCalls2Tree ) Logger::toHtml("./debug.html");
+	     clear();
+	    _Active =0;
+	}
     }
     
     //-------------------------------------------------------------------------------
@@ -280,16 +321,17 @@ namespace atomism
 	if( _FunctionCalls2Tree ) _CurrentElement->addMessage(priority,message);
 	if(priority<_MinPriority) return;
 	
-        if( (priority==INFO) && 
-	    (_CurrentDepth > _MaxFunctionCallDepth )) return;
+        if(_CurrentDepth > _MaxFunctionCallDepth ) return;
         
+	for(size_t i=0; i<_CurrentDepth;i++) (*_OutStream)<<"  ";
+	  
 	(*_OutStream)<<PRIORITY_NAMES[priority]<<" : "<<message<<std::endl;
     }
     
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
 
-    template<int N,typename T>
+    template<typename T,size_t N>
     inline    
     void Logger::writeMultiColumns(std::array<T,N>& heads) {
       
@@ -304,7 +346,73 @@ namespace atomism
 	if( INFO>=_MinPriority) (*_OutStream)<<out<<endl;
 	
     }
+ 
+    //-------------------------------------------------------------------------------
+    //-------------------------------------------------------------------------------
+
+    inline    
+    void Logger::insertChildrenInHtml(LogElement* element,std::ostream& outfile,int& ivar) {
     
+         	 
+	 std::vector<std::shared_ptr<LogElement> > children=element->getFunctionsCalled();
+	 string lmarge="";
+	// for( size_t i = 0 ;i<ivar;i++) lmarge+="\t";
+	 for( auto child: children) {
+
+	     outfile<< lmarge <<"d = (data["<<ivar<<"] = {});"<<endl;
+	     outfile<< lmarge << "indent++;"<<endl;
+             outfile<< lmarge << "parents.push("<<ivar<<" - 1);"<<endl;
+	     outfile<< lmarge << "if (parents.length > 0) {"<<endl;
+             outfile<< lmarge << "parent = parents[parents.length - 1];"<<endl;
+             outfile<< lmarge << "} else {"<<endl;
+             outfile<< lmarge << "parent = null;"<<endl;
+             outfile<< lmarge << "}"<<endl;
+	     outfile<< lmarge << "d[\"id\"] = \"id_"<<ivar<<"\""<<endl;
+             outfile<< lmarge << "d[\"indent\"] = indent;"<<endl;
+             outfile<< lmarge << "d[\"parent\"] = parent;"<<endl;
+             outfile<< lmarge << "d[\"title\"] = \""<<child->getFunctionName()<<"\""<<endl;
+             outfile<< lmarge << "d[\"duration\"] = \""<<child->duration()<<"\";"<<endl;
+	     
+             outfile<< "d[\"percentComplete\"]="<<child->duration()/child->totalTime()*100<<";"<<endl;
+	     ivar++;
+	     Logger::insertChildrenInHtml(child.get(),outfile,ivar);
+	     outfile << "indent--;"<<endl;
+             outfile << "parents.pop();"<<endl;
+	 }
+    }
+    //-------------------------------------------------------------------------------
+    //-------------------------------------------------------------------------------
+
+    inline    
+    void Logger::toHtml(string filename) {
+    
+      
+	 std::string line ;
+	 int ivar = 0;
+	 
+         std::ifstream infile( "./src/Utilities/debugTemplate.html" ) ;
+	 std::ofstream outfile( filename ) ;
+         if ( infile ) {
+            while ( getline( infile , line ) ) {
+	      
+	        outfile << line << '\n' ;//supposing '\n' to be line end
+	        if(line == "//treeview"){
+		  
+                    outfile << "var indent = 0;"<<endl;
+                    outfile << "var parents = [];"<<endl;
+		    Logger::insertChildrenInHtml(_CurrentElement,outfile,ivar);
+		    outfile << "indent--;"<<endl;
+		    outfile << "parents.pop();"<<endl;
+	     
+                    //Logger::insertChildrenInHtml(_CurrentElement,outfile,ivar);
+		 }
+             }
+         }
+         
+         infile.close();
+	 outfile.close();
+    }
+   
     
 }
 #endif // MSLOGGER_H
