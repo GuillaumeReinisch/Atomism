@@ -32,36 +32,48 @@ namespace atomism {
      *  \brief Lagrangian of a system defined by a kinetic operator and a potential energy surface
      *
      */
-	template<
-    typename ScalarType         = double,
-    typename StateType          = std::vector<ScalarType>,
-    typename PositionVectorType = std::vector< std::array<ScalarType, 3> >
+    template<
+    typename TheEntity          = Entity,
+    typename ThePes             = PotentialEnergySurface,
+    typename Scalar             = double,
+    typename Vector             = std::vector<Scalar>,
+    typename Matrix             = std::vector< std::vector<Scalar> >,
+    typename Positions          = std::array< std::vector<Scalar>, 3 >
     >
     class Lagrangian
     {
         
     public:
         
-	    Lagrangian(boost::shared_ptr<const KineticOperator> kin,
-                   boost::shared_ptr<const PotentialEnergySurface> pot);
+	Lagrangian(std::shared_ptr<
+	           const KineticOperator<TheEntity, Scalar,Vector,Matrix,Positions>> kin,
+                   std::shared_ptr<
+                   const PotentialEnergySurface<ThePes, Scalar,Vector,Matrix,Positions>> pot,
+		   std::shared_ptr<
+		   ResourceManager< Scalar, Vector, Matrix, Positions>> ressource
+		   );
         
-        ScalarType L(const GeneralizedCoordinates& q,
-                     const GeneralizedCoordinates& qp,
-                     Environment& Environment ) const;
+        Scalar L(const GeneralizedCoordinates& q,
+                 const GeneralizedCoordinates& qp ) const;
         
-        ScalarType T(const GeneralizedCoordinates& q,
-                     const GeneralizedCoordinates& qp,
-                     PositionVectorType& positions,
-                     Environment& Environment ) const;
+        Scalar T(const GeneralizedCoordinates& q,
+                 const GeneralizedCoordinates& qp ) const;
         
-        ScalarType U(const GeneralizedCoordinates& q,
-                     Environment& Environment) const;
+        Scalar U(const GeneralizedCoordinates& q )  const;
         
     private:
         
-        boost::shared_ptr<const KineticOperator> _KineticOperator;
+        mutable std::shared_ptr<
+        ResourceManager< Scalar, Vector, Matrix, Positions >
+        > _ResourceMngr;
+	
+        std::shared_ptr<
+        const KineticOperator<TheEntity, Scalar,Vector,Matrix,Positions>
+        > _KineticOperator;
         
-        boost::shared_ptr<const PotentialEnergySurface> _PES;
+        std::shared_ptr<
+        const PotentialEnergySurface<ThePes, Scalar,Vector,Matrix,Positions>
+        > _PES;
         
         Lagrangian();
     };
@@ -70,93 +82,98 @@ namespace atomism {
     //-----------------------------------------------------------------------------
     
     template<
-    typename ScalarType         = double,
-    typename StateType          = std::vector<ScalarType>,
-    typename PositionVectorType = std::vector< std::array<ScalarType, 3> >
+    typename TheEntity          = Entity,
+    typename ThePes             = PotentialEnergySurface,
+    typename Scalar             = double,
+    typename Vector             = std::vector<Scalar>,
+    typename Matrix             = std::vector< std::vector<Scalar> >,
+    typename Positions          = std::array< std::vector<Scalar>, 3 >
     >
     inline
     Lagrangian::Lagrangian() const {
         
-        ATOMISM_LOGIN();
-        ATOMISM_LOGOUT();
-    };
-    
-    //-----------------------------------------------------------------------------
-    //-----------------------------------------------------------------------------
-    
-	template<
-    typename ScalarType         = double,
-    typename StateType          = std::vector<ScalarType>,
-    typename PositionVectorType = std::vector< std::array<ScalarType, 3> >
-    >
-    inline
-    Lagrangian::Lagrangian(boost::shared_ptr<const KineticOperator> kin,
-                           boost::shared_ptr<const PotentialEnergySurface> epot
-                           ) const {
-        
-        ATOMISM_LOGIN();
-        
-        _KineticOperator = kin;
-        _PES = epot;
-        
-        ATOMISM_LOGOUT();
+        ATOMISM_LOG();
     };
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
     
     template<
-    typename ScalarType         = double,
-    typename StateType          = std::vector<ScalarType>,
-    typename PositionVectorType = std::vector< std::array<ScalarType, 3> >
+    typename TheEntity          = Entity,
+    typename ThePes             = PotentialEnergySurface,
+    typename Scalar             = double,
+    typename Vector             = std::vector<Scalar>,
+    typename Matrix             = std::vector< std::vector<Scalar> >,
+    typename Positions          = std::array< std::vector<Scalar>, 3 >
     >
     inline
-    ScalarType Lagrangian::L(const GeneralizedCoordinates& q,
-                             const GeneralizedCoordinates& qp,
-                             Environment& environment ) const {
-        ATOMISM_LOGIN();
-        double L = T( q, qp, environment ) - V( q, environment );
-        ATOMISM_LOGOUT();
-        return L;
+    Lagrangian<TheEntity,ThePes,Scalar,Vector,Matrix,Positions>
+    ::Lagrangian(std::shared_ptr<
+                 const KineticOperator<TheEntity, Scalar,Vector,Matrix,Positions>> kin,
+                 std::shared_ptr<
+                 const PotentialEnergySurface<ThePes, Scalar,Vector,Matrix,Positions>> pot,
+		 std::shared_ptr<
+		 ResourceManager< Scalar, Vector, Matrix, Positions>> resource
+		 )
+    : _PES(pot), _KineticOperator(kin), _ResourceMngr(resource){ ATOMISM_LOG(); }
+    
+    //-----------------------------------------------------------------------------
+    //-----------------------------------------------------------------------------
+    
+    template<
+    typename TheEntity          = Entity,
+    typename ThePes             = PotentialEnergySurface,
+    typename Scalar             = double,
+    typename Vector             = std::vector<Scalar>,
+    typename Matrix             = std::vector< std::vector<Scalar> >,
+    typename Positions          = std::array< std::vector<Scalar>, 3 >
+    >
+    inline
+    Scalar Lagrangian<TheEntity,ThePes,Scalar,Vector,Matrix,Positions>
+    ::L(const GeneralizedCoordinates& q,
+                             const GeneralizedCoordinates& qp ) const {
+        ATOMISM_LOG();
+        return T( q, qp ) - U( q );
     }
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
     
     template<
-    typename ScalarType         = double,
-    typename StateType          = std::vector<ScalarType>,
-    typename PositionVectorType = std::vector< std::array<ScalarType, 3> >
+    typename TheEntity          = Entity,
+    typename ThePes             = PotentialEnergySurface,
+    typename Scalar             = double,
+    typename Vector             = std::vector<Scalar>,
+    typename Matrix             = std::vector< std::vector<Scalar> >,
+    typename Positions          = std::array< std::vector<Scalar>, 3 >
     >
     inline
-    ScalarType Lagrangian::T(const GeneralizedCoordinates& q,
+    Scalar Lagrangian<TheEntity,ThePes,Scalar,Vector,Matrix,Positions>
+    ::T(const GeneralizedCoordinates& q,
                              const GeneralizedCoordinates& qp,
-                             PositionVectorType& positions,
-                             Environment& environment ) const {
+                             PositionVectorType& positions ) const {
         ATOMISM_LOGIN();
-        _KineticOperator->computeKMatrix( q , environment );
-        double T = evaluateOperator( qp, environment.KMatrix , qp );
-        ATOMISM_LOGOUT();
-        return T;
-        
+        return T = _KineticOperator->computeKineticEnergy( q, qp );
     }
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
     
     template<
-    typename ScalarType         = double,
-    typename StateType          = std::vector<ScalarType>,
-    typename PositionVectorType = std::vector< std::array<ScalarType, 3> >
+    typename TheEntity          = Entity,
+    typename ThePes             = PotentialEnergySurface,
+    typename Scalar             = double,
+    typename Vector             = std::vector<Scalar>,
+    typename Matrix             = std::vector< std::vector<Scalar> >,
+    typename Positions          = std::array< std::vector<Scalar>, 3 >
     >
     inline
-    ScalarType Lagrangian::U(const GeneralizedCoordinates& q,
+    Scalar Lagrangian<TheEntity,ThePes,Scalar,Vector,Matrix,Positions>
+    ::U(const GeneralizedCoordinates& q,
                              Environment& Environment) const {
         
         ATOMISM_LOGIN();
-        double U = _PES->evaluate( q , environment );
-        ATOMISM_LOGOUT();
-        return U;
+        return _PES->evaluate( q );
     }
     
     
