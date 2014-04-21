@@ -26,6 +26,7 @@
 #include <iostream>
 #include <algorithm>
 #include <array>
+#include <boost/concept_check.hpp>
 
 #include <Logger.h>
 #include <Exceptions.h>
@@ -35,6 +36,7 @@
 namespace atomism {
     
  
+    
     /** \class ResourceManager
      *
      * \brief Manage the resources, ensure thread safety and promote resources recycling.
@@ -52,10 +54,10 @@ namespace atomism {
     typename Scalar       = double,
     typename Vector       = std::vector<Scalar>,
     typename Matrix       = std::vector<std::vector<Scalar>>,
-    typename Positions    = std::array< std::vector<Scalar> , 3>
+    typename Positions    = std::tuple<Vector&,Vector&,Vector&>
     >
     class ResourceManager {
-        
+    public:  
      /** \class Resource
      *
      * \brief Wrapper to ensure correct liberation of resources 
@@ -68,12 +70,21 @@ namespace atomism {
         friend ResourceManager;
 	
 	Resource() : _Object(0){};
+				  
+	Resource( T& ptr, size_t& count ) 
+	: _Object(&ptr) { _Counts.push_back(&count);
+			  count++;
+	};
 	
-	Resource(T& ptr,bool& locked) 
-	: _Object(&ptr),_Locked(&locked) {*_Locked=1; };
+	
+	Resource( T& ptr, std::vector<size_t*> counts ) 
+	: _Object(&ptr) { _Counts = counts;
+	                   for( auto count: _Counts) (*count)++; 
+			 };
 	
         T*    _Object;
-	bool* _Locked;
+	
+	std::vector<size_t*> _Counts;
 	
     public:
       
@@ -81,30 +92,45 @@ namespace atomism {
         
 	T&  operator*(){ return *_Object;}
 	
-	~Resource() { _Locked=0;}
+	~Resource() {
+	    
+	    for( auto count: _Counts) (*count)--;
+	}
+		     
+	Resource<T>& operator=(const Resource<T>& resource) {
+	             
+	    _Object  = resource._Object;
+	    _Counts  = resource._Counts;
+	    for( auto count: _Counts) (*count)++;
+	    return *this;
+	}
+		
+	Resource(const Resource<T>& resource) { operator=(resource); }
+			  
     };
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
-        typedef std::tuple<Vector,bool,size_t>           VectorResource;
-	typedef std::tuple<Vector,bool,size_t,size_t>    MatrixResource;
-	typedef std::tuple<Positions,bool,size_t>        PositionsResource;
+        typedef std::tuple<Vector,std::size_t,std::size_t>                VectorResource;
+	typedef std::tuple<Matrix,std::size_t,std::size_t,std::size_t>    MatrixResource;
+	typedef Positions             		  		  	  PositionsResource;
 	
     public:
         
         ResourceManager();
         	
-	Resource<Vector>    requestVector(size_t n);
-	Resource<Matrix>    requestMatrix(size_t n,size_t n2);
-	Resource<Positions> requestPositions(size_t n);
+	Resource<Vector>    requestVector(std::size_t n);
+	Resource<Matrix>    requestMatrix(std::size_t n,std::size_t n2);
+	Resource<Positions> requestPositions(std::size_t n);
 		
 	void clear();  
 	
-    private:
+    //private:
       
         std::vector<VectorResource>      _Vectors;	
         std::vector<MatrixResource>      _Matrices;	 
 	std::vector<PositionsResource>   _Positions;	
+	
     };
     
     //-----------------------------------------------------------------------------
@@ -113,7 +139,7 @@ namespace atomism {
     template<typename Scalar,typename Vector,typename Matrix,typename Positions>
     inline
     ResourceManager<Scalar,Vector,Matrix,Positions>
-    ::ResourceManager() { ATOMISM_LOG(); }
+    ::ResourceManager() { ATOMISM_LOG(); _Vectors.reserve(100);}
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
@@ -125,16 +151,18 @@ namespace atomism {
       
         ATOMISM_LOG();
 	
-	for(  auto it : _Vectors )
-	    if( ( get<1>(it) == 0) && ( get<2>(it) == n)){
+	for(  auto& it : _Vectors )
+	    if( ( get<1>(it) == 0) && ( std::get<2>(it) == n)){
 	      
-	        LOGGER_WRITE(Logger::DEBUG,"Vector available, return reference.");
-	        Resource<Vector> resource(get<0>(it),get<1>(it));
+	        LOGGER_WRITE(Logger::DEBUG,stringstream()<<"Vector available, return reference (size="
+		                            <<n_elements(get<0>(it))<<") "<<&(std::get<0>(it))<<endl);
+	        Resource<Vector> resource(std::get<0>(it),std::get<1>(it));
 	        return resource;
 	    }
+	    
 	LOGGER_WRITE(Logger::DEBUG,"Vector not available, create a new one.");
 	
-	_Vectors.push_back(VectorResource(Vector(),1,n));
+	_Vectors.push_back(VectorResource(Vector(),0,n));
 	
 	allocate(get<0>(_Vectors.back()),n);
 	
@@ -153,17 +181,25 @@ namespace atomism {
     ResourceManager<Scalar,Vector,Matrix,Positions>::requestMatrix(size_t n1,size_t n2) {
       
         ATOMISM_LOG();
+	size_t i=0;
+	for(  auto it : _Matrices ) {
+	  
+	    if( ( get<1>(it) == 0) && ( get<2>(it) == n1) && ( get<3>(it) == n2)){
+	      
+	        Resource<Matrix> resource(get<0>(it),get<1>(it));
+	        return resource;
+	    }
+	}
+	LOGGER_WRITE(Logger::DEBUG,"Matrix not available, create a new one.");
 	
-	for(  auto it : _Vectors )
-	    if( ( get<1>(*it) == 0) && ( get<2>(*it) == n1) && ( get<3>(*it) == n2))
-	        return get<0>(*it);
+	_Matrices.push_back(MatrixResource(Matrix(),1,n1,n2));
 	
-	Matrix v;
-	allocate(v,n1,n2);
-	MatrixResource allocated = MatrixResource(v,1,n1,n2);
+	allocate(get<0>(_Matrices.back()),n1,n2);
 	
-	_Matrices.push_back(allocated);
-	return get<0>(_Vectors.back());
+	Resource<Matrix> resource(get<0>(_Matrices.back()),
+				  get<1>(_Matrices.back()));
+	
+	return resource;
     }   
     
     //-----------------------------------------------------------------------------
@@ -175,23 +211,53 @@ namespace atomism {
     ResourceManager<Scalar,Vector,Matrix,Positions>::requestPositions(size_t n) {
       
         ATOMISM_LOG();
+	std::vector<Vector*> vectors;
+	std::vector<size_t*> counts;
 	
-	for(  auto it : _Positions )
-	    if( ( get<1>(it) == 0) && ( get<2>(it) == n)){
-	        Resource<Positions> resource(get<0>(it),get<1>(it));
-	        return resource;
+	for(  auto& it : _Vectors )
+	    if( ( get<1>(it) == 0) && ( std::get<2>(it) == n)){
+	      
+	        LOGGER_WRITE(Logger::DEBUG,"One vector component available, use it");
+	        vectors.push_back(&std::get<0>(it));
+		counts.push_back(&(get<1>(it)));
+		if(vectors.size()==3) break;
 	    }
+	    
+        LOGGER_WRITE(Logger::DEBUG,stringstream()<<"Create the "
+		     <<3 - vectors.size()<<" component(s)");
 	
-	LOGGER_WRITE(Logger::DEBUG,"Positions not available, create a new one.");
+        for(size_t i=vectors.size();i<3;i++){
+	  
+	   _Vectors.push_back(VectorResource(Vector(),0,n));
+	    allocate(get<0>(_Vectors.back()),n);
+	    vectors.push_back(&std::get<0>(_Vectors.back()));
+	    counts.push_back(&std::get<1>(_Vectors.back()));
+	}
 	
-	_Positions.push_back(PositionsResource(Positions(),1,n));
-	
-	allocate(get<0>(_Positions.back()),n);
-	
-	Resource<Positions> resource(get<0>(_Positions.back()),
-				     get<1>(_Positions.back()));
-	
+	Positions pos = std::tie(*(vectors[0]),*(vectors[1]),*(vectors[2]));
+		
+	_Positions.push_back(pos);
+	Resource<Positions> resource(_Positions.back(),counts);
+	cout<<*this<<endl;
 	return resource;
+	//return resource;
     } 
+    
+    
+    template<typename Scalar,typename Vector,typename Matrix,typename Positions>  
+    ostream& operator<<(ostream& out,
+			const ResourceManager<Scalar,Vector,Matrix,Positions>& resource) {
+      
+      out<<"resource abstract"<<endl;
+      for(size_t i=0;i<resource._Vectors.size();i++){
+	
+	  out<<i<<"\t"<<get<1>(resource._Vectors[i])<<"\t"
+	  <<std::get<2>(resource._Vectors[i])<<"\t"
+	  <<&(std::get<0>(resource._Vectors[i]))<<endl;
+      }
+      return out;
+    };
+    
+    
 }
 #endif // MSENTITY_H

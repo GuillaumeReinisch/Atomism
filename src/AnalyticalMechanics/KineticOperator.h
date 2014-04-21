@@ -41,8 +41,8 @@ namespace atomism {
         
     public:
         
-	KineticOperator(boost::shared_ptr<const Entity<TheEntity,Scalar,Vector,Matrix> > entity,
-	                boost::shared_ptr<ResourceManager<Scalar,Vector,Matrix> >  resource
+	KineticOperator(std::shared_ptr<const TheEntity> entity,
+	                std::shared_ptr<ResourceManager<Scalar,Vector,Matrix> >  resource
 	                );
         
         /*! \brief compute the kinetic matrix
@@ -51,8 +51,8 @@ namespace atomism {
 	 * \param KMatrix output: kinetic matrix 
          * \param env environment 
          */
-        double computeKineticMatrix(const GeneralizedCoordinates& q,
-				    Matrix& KMatrix ) const;
+        void computeKineticMatrix(const GeneralizedCoordinates<Scalar,Vector>& q,
+				  Matrix& KMatrix ) const;
   
 	/*! \brief compute the kinetic matrix
          *
@@ -60,12 +60,12 @@ namespace atomism {
 	 * \param KMatrix output: kinetic matrix 
          * \param env environment 
          */
-        double computeKineticEnergy(const GeneralizedCoordinates& q,
-				    const GeneralizedCoordinates& qp ) const;
+        double computeKineticEnergy(const GeneralizedCoordinates<Scalar,Vector>& q,
+				    const GeneralizedCoordinates<Scalar,Vector>& qp ) const;
 				    
     private:
         
-        boost::shared_ptr<const Entity<TheEntity,Scalar,Vector,Matrix> > _Entity;
+        std::shared_ptr<const TheEntity > _Entity;
 	
         //! This is used to create/obtain new elements within thread safety.
         mutable std::shared_ptr<ResourceManager<Scalar,Vector,Matrix> > _ResourceMngr;
@@ -76,49 +76,35 @@ namespace atomism {
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
 	
-    template<
-    typename TheEntity,
-    typename Scalar           = double,
-    typename Vector           = std::vector<Scalar>,
-    typename Matrix 	      = std::vector<std::vector<Scalar>>
-    >
+    template<typename TheEntity,typename Scalar,typename Vector,typename Matrix>
     inline
-    KineticOperator<Scalar,Vector,Matrix>::KineticOperator() { }
+    KineticOperator<TheEntity,Scalar,Vector,Matrix>::KineticOperator() { }
 	
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
 	
     template<
-    typename TheEntity,
-    typename Scalar           = double,
-    typename Vector           = std::vector<Scalar>,
-    typename Matrix 	      = std::vector<std::vector<Scalar>>
-    >
+    typename TheEntity,typename Scalar,typename Vector,typename Matrix>
     inline
-    KineticOperator<Scalar,Vector,Matrix>
-    ::KineticOperator(boost::shared_ptr<const Entity<TheEntity,Scalar,Vector,Matrix> > entity,
-                    boost::shared_ptr<ResourceManager<Scalar,Vector,Matrix> >  resource ) 
+    KineticOperator<TheEntity,Scalar,Vector,Matrix>
+    ::KineticOperator(std::shared_ptr<const TheEntity > entity,
+                      std::shared_ptr<ResourceManager<Scalar,Vector,Matrix> >  resource ) 
     :_Entity(entity),_ResourceMngr(resource) {
     }
 	
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
 	
-    template<
-    typename TheEntity, 
-    typename Scalar           = double,
-    typename Vector           = std::vector<Scalar>,
-    typename Matrix 	      = std::vector<std::vector<Scalar>>
-    >
+    template<typename TheEntity,typename Scalar,typename Vector,typename Matrix>
     inline
-    double KineticOperator<Scalar,Vector,Matrix>
-    ::computeKineticEnergy(const Vector& q,
-			   const Vector& qp) const {
+    double KineticOperator<TheEntity,Scalar,Vector,Matrix>
+    ::computeKineticEnergy(const GeneralizedCoordinates<Scalar,Vector>& q,
+			   const GeneralizedCoordinates<Scalar,Vector>& qp) const {
         
          ATOMISM_LOG();    
 	 
 	 size_t n     = _Entity->noOfDofs();
-	 auto kmatrix = _ResourceMngr->get<Matrix>(n,n);
+	 auto kmatrix = _ResourceMngr->requestMatrix(n,n);
 	 computeKineticMatrix(q,*kmatrix);
 	 	 	   
 	 return evaluate(qp,*kmatrix,qp);	
@@ -127,35 +113,30 @@ namespace atomism {
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
 	
-    template<
-    typename Scalar           = double,
-    typename Vector           = std::vector<Scalar>,
-    typename Matrix 	      = std::vector<std::vector<Scalar>>
-    >
+    template<typename TheEntity,typename Scalar,typename Vector,typename Matrix>
     inline
-    void KineticOperator<Scalar,Vector,Matrix>::
-    computeKineticMatrix(const Vector& q,
-			 const Vector& dq,
-			 Matrix& KMatrix )  const {
+    void KineticOperator<TheEntity,Scalar,Vector,Matrix>
+    ::computeKineticMatrix(const GeneralizedCoordinates<Scalar,Vector>& q,
+			   Matrix& KMatrix )  const {
         
          ATOMISM_LOG();   
-	 ATOMISM_EXCEPT_IF( [&](){return q.size()!=dq.size();} );
+	 ATOMISM_VALUE_MISMATCH( [&](){return pow(n_elements(q.getValues()),2);},
+	                         [&](){return n_elements(KMatrix);});
 	 
 	 size_t n  = _Entity->noOfDofs();
 	 size_t n2 = _Entity->noOfElements();
 	 
-	 auto JacX = _ResourceMngr->get<Matrix>(n,n2);
-	 auto JacY = _ResourceMngr->get<Matrix>(n,n2);
-	 auto JacZ = _ResourceMngr->get<Matrix>(n,n2);
+	 auto JacX = _ResourceMngr->requestMatrix(n,n2);
+	 auto JacY = _ResourceMngr->requestMatrix(n,n2);
+	 auto JacZ = _ResourceMngr->requestMatrix(n,n2);
 	 
-         _Entity->computeJacobian(q, dq,*JacX,*JacY,*JacZ);
+         _Entity->computeJacobian(q.getValues(),q.getdqs(),*JacX,*JacY,*JacZ);
 	
-	 set_zero(KMatrix);
+	 init_constant(KMatrix,0.);
 	 
-	 KMatrix +=  multiplyByTransposeAndWeigth( *JacX, _Entity->getMasses() )
-	           + multiplyByTransposeAndWeigth( *JacY, _Entity->getMasses() )
-	           + multiplyByTransposeAndWeigth( *JacZ, _Entity->getMasses() );
-		   
+	 KMatrix =  multiplyByTransposeAndWeigth( *JacX, _Entity->getMasses() )
+	         +  multiplyByTransposeAndWeigth( *JacY, _Entity->getMasses() )
+	         +  multiplyByTransposeAndWeigth( *JacZ, _Entity->getMasses() );
     };
     
     //-----------------------------------------------------------------------------

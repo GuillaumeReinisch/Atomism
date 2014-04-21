@@ -23,6 +23,7 @@
 #define POTENTIALENERGYSURFACE_H
 
 #include <GeneralizedCoordinates.h>
+#include <ResourceManager.h>
 
 namespace atomism {
     
@@ -31,26 +32,29 @@ namespace atomism {
      * \brief Describes a surface of potential energy
      */
     template<
+    typename TheEntity,
     typename DerivedClass,
     typename Scalar      = double,
     typename Vector      = std::vector<Scalar>,
     typename Matrix      = std::vector< std::vector<Scalar> >,
-    typename Positions   = std::array< std::vector<Scalar> ,3>
+    typename Positions   = std::tuple<Vector&,Vector&,Vector&>
     >
     class PotentialEnergySurface {
         
     public:
         
-        PotentialEnergySurface( boost::shared_ptr<Entity> entity ,
-				boost::shared_ptr<ResourceManager<Scalar,Vector,Matrix>> _ResourceMngr
+        PotentialEnergySurface( std::shared_ptr<const TheEntity> entity ,
+				std::shared_ptr<ResourceManager<Scalar,Vector,Matrix>> _ResourceMngr
 			       );
         
-        Scalar evaluate(const GeneralizedCoordinates& q) const;
+	std::shared_ptr<const TheEntity> getEntity() const {return _Entity;}
 	
-        Scalar evaluate(const GeneralizedCoordinates& q,
+        Scalar evaluate(const GeneralizedCoordinates<Scalar,Vector>& q) const;
+	
+        Scalar evaluate(const GeneralizedCoordinates<Scalar,Vector>& q,
 			const Positions& coors) const;
-	
-        void computeJacobian(const GeneralizedCoordinates& q,
+	/*
+        void computeJacobian(const GeneralizedCoordinates<Scalar,Vector>& q,
 			       Matrix& jacOfPES) const;
 	
 	void computeJacobian(const Matrix& jacOfDofs,
@@ -58,76 +62,72 @@ namespace atomism {
 			       const Matrix& jacOfDisplY,
 			       const Matrix& jacOfDisplZ,
 			       Matrix& jacOfPES) const;
-	
+	*/
     private:
         
         PotentialEnergySurface();
         
-        boost::shared_ptr<const Entity> _Entity;   
+        std::shared_ptr<const TheEntity> _Entity;   
 
     protected:
       
-	mutable boost::shared_ptr<ResourceManager<Scalar,Vector,Matrix>> _ResourceMngr; 
+	mutable std::shared_ptr<ResourceManager<Scalar,Vector,Matrix>> _ResourceMngr; 
     };
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
     
     template<
-    typename DerivedClass,
-    typename Scalar      = double,
-    typename Vector      = std::vector<Scalar>,
-    typename Matrix      = std::vector< std::vector<Scalar> >,
-    typename Positions   = std::array< std::vector<Scalar> ,3>
+    typename TheEntity, typename DerivedClass, typename Scalar, typename Vector ,
+    typename Matrix , typename Positions
     >
     inline
-    PotentialEnergySurface::PotentialEnergySurface( boost::shared_ptr<Entity> entity) {
-      
-        IMPACT_LOG();
-        _Entity = entity;
+    PotentialEnergySurface<TheEntity,DerivedClass,Scalar,Vector,Matrix,Positions>
+    ::PotentialEnergySurface( std::shared_ptr<const TheEntity> entity ,
+			      std::shared_ptr<ResourceManager<Scalar,Vector,Matrix>> resource)
+    : _Entity(entity),_ResourceMngr(resource){
+        ATOMISM_LOG();
     }
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
     
     template<
-    typename DerivedClass,
-    typename Scalar      = double,
-    typename Vector      = std::vector<Scalar>,
-    typename Matrix      = std::vector< std::vector<Scalar> >,
-    typename Positions   = std::array< std::vector<Scalar> ,3>
+    typename TheEntity, typename DerivedClass, typename Scalar, typename Vector ,
+    typename Matrix , typename Positions
     >
     inline
-    void PotentialEnergySurface<DerivedClass,Scalar,Vector,Matrix,Positions>
-    ::evaluate(const GeneralizedCoordinates& q,const Positions& coors) const {
+    Scalar PotentialEnergySurface<TheEntity,DerivedClass,Scalar,Vector,Matrix,Positions>
+    ::evaluate(const GeneralizedCoordinates<Scalar,Vector>& q,const Positions& coors) const {
         
-        IMPACT_LOG();
-        return r = static_cast<DerivedClass*>(this)->evaluate(q);
+        ATOMISM_LOG();
+	//const DerivedClass* a = static_cast<DerivedClass*>(this);
+        return  static_cast<const DerivedClass*>(this)->evaluate(q,coors);
     }
     
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
-    
     template<
-    typename DerivedClass,
-    typename Scalar      = double,
-    typename Vector      = std::vector<Scalar>,
-    typename Matrix      = std::vector< std::vector<Scalar> >,
-    typename Positions   = std::array< std::vector<Scalar> ,3>
+    typename TheEntity, typename DerivedClass, typename Scalar, typename Vector ,
+    typename Matrix , typename Positions
     >
     inline
-    void PotentialEnergySurface<DerivedClass,Scalar,Vector,Matrix,Positions>
-    ::evaluate(const GeneralizedCoordinates& q,const Positions& coors) const {
+    Scalar PotentialEnergySurface<TheEntity,DerivedClass,Scalar,Vector,Matrix,Positions>
+    ::evaluate(const GeneralizedCoordinates<Scalar,Vector>& q) const {
         
-        IMPACT_LOG();
-	auto& coors = _ResourceMngr->get<Positions>(_Entity->noOfElements());
-	_Entity->computeCoordinates(q.getValues(),coors);
+        ATOMISM_LOG();
 	
-        return evaluate(q,coors);
+	auto coors = _ResourceMngr->requestPositions(_Entity->noOfElements());
+	
+	ATOMISM_VALUE_MISMATCH( [&](){return n_elements(q.getValues());} ,
+				[&](){return n_elements(*coors);});
+	
+	_Entity->computeCoordinates(q.getValues(),*coors);
+        return evaluate(q,*coors);
     }
     //-----------------------------------------------------------------------------
     //-----------------------------------------------------------------------------
-    
+    /*
     template<
     typename DerivedClass,
     typename Scalar      = double,
@@ -184,6 +184,6 @@ namespace atomism {
 				        slice(jacOfDisplZ,i)));
 	 }
 	
-    }
+    }*/
 }
 #endif // MSENTITY_H

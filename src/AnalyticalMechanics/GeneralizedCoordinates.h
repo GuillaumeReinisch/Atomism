@@ -22,7 +22,7 @@
 #define GeneralizedCoordinates_H
 
 #include <Entity.h>
-#include <Environment.h>
+#include <mutex>
 
 namespace atomism {
     
@@ -60,6 +60,9 @@ namespace atomism {
 	
 	const Vector& getMaxs()   const  {return _Maxs;  };	
 	
+	void setValues(Vector& values)   { std::lock_guard<std::mutex> guard(_Mutex);
+					   init_clone(_Values,values);
+	                                  }
     private:
         
         Vector _Values;
@@ -68,6 +71,7 @@ namespace atomism {
         Vector _Mins;
         Vector _Maxs;
         
+	std::mutex _Mutex;
     };
     
     //-----------------------------------------------------------------------------
@@ -90,7 +94,6 @@ namespace atomism {
 	_dqs   =constant_clone(*v,dqs);
 	_Mins  =constant_clone(*v,mins);
 	_Maxs  =constant_clone(*v,maxs);
-	
     };
     
     //-----------------------------------------------------------------------------
