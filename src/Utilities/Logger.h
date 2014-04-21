@@ -45,6 +45,7 @@ namespace atomism
    class Exception;
    class Logger;
 
+
     /** Logger to displat messages in outsream
      * 
      * The logger defines the loggin mechanisms in atomism. The mechanisms
@@ -156,8 +157,12 @@ namespace atomism
         static void enterFunction(const std::string& fct);
 	static void exitFunction(const std::string& fct);
 	static void write(Priority priority, const string& message);
-      
+	static void write(Priority priority, const ostream& message);	
 	static void toHtml(string filename);
+	
+	/*template<typename T>
+	static void operator<<(T text);
+	*/
 	
         template<typename T,size_t N>
         static void writeMultiColumns(std::array<T,N>& heads);
@@ -328,6 +333,25 @@ namespace atomism
 	(*_OutStream)<<PRIORITY_NAMES[priority]<<" : "<<message<<std::endl;
     }
     
+    //-------------------------------------------------------------------------------
+    //-------------------------------------------------------------------------------
+    
+    inline        
+    void Logger::write(Priority priority, const ostream& message ) {
+        
+        if( !_Active ) return;
+	if( _FunctionCalls2Tree ) { 
+	     const stringstream& out = dynamic_cast<const stringstream&>(message);
+	    _CurrentElement->addMessage(priority,out.str());
+	}
+	if(priority<_MinPriority) return;
+	
+        if(_CurrentDepth > _MaxFunctionCallDepth ) return;
+        
+	for(size_t i=0; i<_CurrentDepth;i++) (*_OutStream)<<"  ";
+	const stringstream& out = dynamic_cast<const stringstream&>(message);
+	(*_OutStream)<<PRIORITY_NAMES[priority]<<" : "<<out.str()<<std::endl;
+    }
     //-------------------------------------------------------------------------------
     //-------------------------------------------------------------------------------
 
